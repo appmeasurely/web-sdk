@@ -3,11 +3,12 @@
 
   // ── Constants ─────────────────────────────────────────────────────────────
   var ENDPOINT = 'https://uqvknwgcpptxnbmsubkc.supabase.co/functions/v1/track-event';
-  var SDK_VERSION = '1.0.0';
+  var SDK_VERSION = '1.1.0';
   var SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
   var QUEUE_KEY = 'am_queue';
   var VISITOR_KEY = 'am_visitor_id';
   var SESSION_KEY = 'am_session';
+  var CUSTOMER_KEY = 'am_customer_user_id';
 
   // ── State ─────────────────────────────────────────────────────────────────
   var siteId = window.AM_SITE_ID;
@@ -16,6 +17,7 @@
   var sending = false;
   var sessionId = null;
   var sessionStart = null;
+  var customerUserId = getStoredCustomerUserId();
 
   // ── Utility functions ─────────────────────────────────────────────────────
 
@@ -36,6 +38,29 @@
       return id;
     } catch(e) {
       return generateId();
+    }
+  }
+
+  function getStoredCustomerUserId() {
+    try {
+      return localStorage.getItem(CUSTOMER_KEY) || null;
+    } catch(e) {
+      return null;
+    }
+  }
+
+  function setCustomerUserId(id) {
+    customerUserId = id || null;
+    try {
+      if (id) {
+        localStorage.setItem(CUSTOMER_KEY, id);
+      } else {
+        localStorage.removeItem(CUSTOMER_KEY);
+      }
+    } catch(e) {
+      // localStorage unavailable (private mode, etc.) - identify() still
+      // works for the rest of this page load via the in-memory variable,
+      // it just won't persist across navigations.
     }
   }
 
@@ -122,6 +147,10 @@
     if (utmParams.utm_term) payload.utm_term = utmParams.utm_term;
     if (utmParams.utm_content) payload.utm_content = utmParams.utm_content;
 
+    // Tie this visitor to a logged-in user, once identify() has been
+    // called (added v1.1.0 - see am('identify', ...) below).
+    if (customerUserId) payload.customer_user_id = customerUserId;
+
     return payload;
   }
 
@@ -195,6 +224,15 @@
       enqueue(payload);
     } else if (action === 'pageview') {
       enqueue(buildBasePayload('page_view'));
+    } else if (action === 'identify') {
+      // am('identify', 'customer_user_id') - call once a user is known
+      // (e.g. right after login), before any track() calls you want
+      // attributed to them. Persists across page loads on this site
+      // until identify(null) or a different ID is passed. This is what
+      // lets AppMeasurely's User Timeline match a web visitor to the
+      // same customer_user_id used by your mobile apps.
+      setCustomerUserId(eventName);
+      log('Identified: ' + (eventName || '(cleared)'));
     }
   };
 
